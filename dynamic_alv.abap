@@ -15,8 +15,11 @@ CLASS lcl_exception IMPLEMENTATION.
 METHOD constructor.
 super->constructor( textid = i_textid previous = i_previous ). message = i_message.
 mess_tab = i_mess_tab.
-ENDMETHOD. ENDCLASS.
-CLASS lcl_alv DEFINITION. PUBLIC SECTION.
+ENDMETHOD. 
+ENDCLASS.
+
+CLASS lcl_alv DEFINITION. 
+PUBLIC SECTION.
 CLASS-DATA : tabname	TYPE tabname.
 DATA	: lo_grid	TYPE REF TO cl_gui_alv_grid, lo_ref_sel TYPE REF TO data.
 
@@ -42,7 +45,9 @@ IF im_name+0(1) EQ 'Z' OR im_name+0(1) EQ 'z'
 OR im_name+0(1) EQ 'Y' OR im_name+0(1) EQ 'y'. tabname = im_name.
 ELSE.
 RAISE EXCEPTION TYPE lcl_exception EXPORTING i_message = 'No Z Table or Y Table Found'. RETURN.
-ENDIF. ENDMETHOD.
+ENDIF. 
+ENDMETHOD.
+
 METHOD create_fcat.
 DATA : lt_fcat TYPE lvc_t_fcat.
 FIELD-SYMBOLS : <ft_table2> TYPE table. ASSIGN lo_ref_sel->* TO <ft_table2>.
@@ -162,7 +167,8 @@ FIELD-SYMBOLS : <ft_table> TYPE table. ASSIGN ch_ref->* TO <ft_table>.
 SELECT * FROM (tabname) INTO TABLE <ft_table>. IF <ft_table> IS INITIAL.
 RAISE EXCEPTION TYPE lcl_exception
 EXPORTING i_message = |No Data Available in { me->tabname }|.
-ENDIF. ENDMETHOD.
+ENDIF. 
+ENDMETHOD.
 
 METHOD create_dyn.
 CREATE DATA ch_ref TYPE TABLE OF (tabname).
@@ -256,4 +262,5 @@ OTHERS	= 2.
 IF sy-subrc <> 0.
 *	MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
 *	WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
-ENDIF. ENDFORM.
+ENDIF. 
+ENDFORM.
