@@ -14,8 +14,10 @@ CLASS lcl_exception DEFINITION INHERITING FROM cx_static_check.
     DATA : message   TYPE string, mess_tab TYPE bapiret2_tab,
            mess_line LIKE LINE OF mess_tab.
 
-    METHODS : constructor IMPORTING REFERENCE(i_message) TYPE string OPTIONAL
-    REFERENCE(i_mess_tab) TYPE bapiret2_tab OPTIONAL REFERENCE(i_textid)  LIKE textid OPTIONAL REFERENCE(i_previous) LIKE previous OPTIONAL.
+    METHODS : constructor IMPORTING REFERENCE(i_message)  TYPE string OPTIONAL
+                                    REFERENCE(i_mess_tab) TYPE bapiret2_tab OPTIONAL
+                                    REFERENCE(i_textid)   LIKE textid OPTIONAL
+                                    REFERENCE(i_previous) LIKE previous OPTIONAL.
 ENDCLASS.
 CLASS lcl_exception IMPLEMENTATION.
 
@@ -32,11 +34,14 @@ CLASS lcl_alv DEFINITION.
     METHODS : constructor IMPORTING REFERENCE(im_name) TYPE tabname RAISING lcl_exception, run RAISING lcl_exception.
 
   PROTECTED SECTION.
-    METHODS :	create_dyn CHANGING REFERENCE(ch_ref) TYPE REF TO data,
-    get_data  CHANGING REFERENCE(ch_ref) TYPE REF TO data RAISING lcl_exception, get_components CHANGING REFERENCE(ch_components) TYPE cl_abap_structdescr=>component_table, create_table IMPORTING REFERENCE(im_components) TYPE
-    cl_abap_structdescr=>component_table
-    EXPORTING REFERENCE(ex_ref_tab)	TYPE REF TO data RAISING lcl_exception, create_fcat IMPORTING REFERENCE(im_ref_tab) TYPE REF TO data
-    CHANGING REFERENCE(ch_fcat)	TYPE lvc_t_fcat, change_toolbar CHANGING REFERENCE(ch_exclude) TYPE ui_functions, display_alv RAISING lcl_exception.
+    METHODS :	create_dyn     CHANGING REFERENCE(ch_ref) TYPE REF TO data,
+              get_data       CHANGING REFERENCE(ch_ref) TYPE REF TO data RAISING lcl_exception,
+              get_components CHANGING REFERENCE(ch_components) TYPE cl_abap_structdescr=>component_table,
+              create_table   IMPORTING REFERENCE(im_components) TYPE cl_abap_structdescr=>component_table
+                             EXPORTING REFERENCE(ex_ref_tab)  TYPE REF TO data RAISING lcl_exception,
+              create_fcat    IMPORTING REFERENCE(im_ref_tab) TYPE REF TO data
+                             CHANGING REFERENCE(ch_fcat)  TYPE lvc_t_fcat,
+      change_toolbar         CHANGING REFERENCE(ch_exclude) TYPE ui_functions, display_alv RAISING lcl_exception.
 
   PRIVATE SECTION.
     DATA : lt_components TYPE cl_abap_structdescr=>component_table, lo_ref  TYPE REF TO data,
@@ -76,149 +81,153 @@ CLASS lcl_alv IMPLEMENTATION.
     t_fieldcatalog = lt_fcat  " Field Catalog for List Viewer Control
     ).
 
-    SELECT * FROM dd03l INTO TABLE @DATA(lt_dd03l) WHERE tabname = @tabname. LOOP AT lt_fcat ASSIGNING FIELD-SYMBOL(<f_fcat>).
-    <f_fcat>-edit = COND #( WHEN <f_fcat>-fieldname NE 'SELECT'
-    THEN SWITCH #(
-    lt_dd03l[ fieldname = <f_fcat>-fieldname ]-keyflag
-    WHEN 'X' THEN ' '
-    WHEN ' ' THEN 'X' )
+    SELECT * FROM dd03l INTO TABLE @DATA(lt_dd03l) WHERE tabname = @tabname.
+    LOOP AT lt_fcat ASSIGNING FIELD-SYMBOL(<f_fcat>).
+      <f_fcat>-edit = COND #( WHEN <f_fcat>-fieldname NE 'SELECT'
+                                                THEN SWITCH #(
+                                                            lt_dd03l[ fieldname = <f_fcat>-fieldname ]-keyflag
+                                                            WHEN 'X' THEN ' '
+                                                            WHEN ' ' THEN 'X' )
+                                                             ).
+
+      <f_fcat>-col_opt = 'X'.
+      IF <f_fcat>-fieldname EQ 'SELECT'.
+        <f_fcat>-edit	= 'X'.
+        <f_fcat>-scrtext_s = 'Select'.
+        <f_fcat>-scrtext_m = 'Select'.
+        <f_fcat>-scrtext_l = 'Select'.
+        <f_fcat>-checkbox = 'X'.
+      ENDIF.
+    ENDLOOP.
+
+    ch_fcat = lt_fcat.
+  ENDMETHOD.
+  METHOD change_toolbar.
+
+    DATA : gs_exclude LIKE LINE OF me->gr_exclude.
+
+    gs_exclude = cl_gui_alv_grid=>mc_fc_loc_insert_row. APPEND gs_exclude TO ch_exclude.
+    gs_exclude = cl_gui_alv_grid=>mc_fc_loc_delete_row. APPEND gs_exclude TO ch_exclude.
+
+  ENDMETHOD.
+  METHOD create_table.
+
+    DATA : lr_table TYPE REF TO cl_abap_tabledescr.
+    DATA : lr_data TYPE REF TO data.
+    me->get_components( CHANGING ch_components = lt_components ).
+
+    IF lines( lt_components ) IS NOT INITIAL.
+      lr_table = cl_abap_tabledescr=>create(
+                                            p_line_type = cl_abap_structdescr=>create( p_components = lt_components ) p_table_kind = cl_abap_tabledescr=>tablekind_std
+                                            ).
+    ELSE.
+      RAISE EXCEPTION TYPE lcl_exception
+        EXPORTING
+          i_textid = cx_sy_struct_attributes=>empty_component_table.
+    ENDIF.
+
+    INSERT VALUE #( name = 'SELECT' type = cl_abap_elemdescr=>get_c( p_length = '1' ) )
+    INTO lt_components INDEX 1.
+    CREATE DATA lr_data TYPE HANDLE lr_table. ASSIGN lr_data->* TO FIELD-SYMBOL(<ft_table2>).
+    ASSIGN lo_ref->* TO FIELD-SYMBOL(<ft_table>).
+    <ft_table2> = CORRESPONDING #( <ft_table> ). ex_ref_tab = lr_data.
+
+  ENDMETHOD.
+
+  METHOD display_alv.
+
+    ASSIGN lo_ref_sel->* TO FIELD-SYMBOL(<ft_table2>).
+
+    "Design Field Catalogue
+    me->create_fcat( EXPORTING
+    im_ref_tab = lo_ref_sel
+    CHANGING
+    ch_fcat	= fcat
     ).
 
-    <f_fcat>-col_opt = 'X'.
-    IF <f_fcat>-fieldname EQ 'SELECT'.
-      <f_fcat>-edit	= 'X'.
-      <f_fcat>-scrtext_s = 'Select'.
-      <f_fcat>-scrtext_m = 'Select'.
-      <f_fcat>-scrtext_l = 'Select'.
-      <f_fcat>-checkbox = 'X'.
+    "Exclude DELETE and INSERT icon because we will only "allow to modify the data.
+    me->change_toolbar( CHANGING
+    ch_exclude = gr_exclude
+    ).
+
+    "If you are about to use only one container, you can use
+    "default screen for which you need to use cl_gui_container=>default_screen.
+    "no need of creating and docking a container into the alv.
+    CREATE OBJECT lo_grid EXPORTING i_parent = cl_gui_container=>default_screen.
+
+    lo_grid->set_table_for_first_display( EXPORTING
+    it_toolbar_excluding  = gr_exclude[]
+
+    CHANGING
+    it_outtab	=	<ft_table2>	" Output Table
+    it_fieldcatalog = fcat  " Field Catalog
+    EXCEPTIONS
+    invalid_parameter_combination = 1	" Wrong Parameter
+    program_error	= 2	" Program Errors
+    too_many_lines  = 3 " Too many Rows in Ready for Input Grid OTHERS  = 4
+    ).
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE lcl_exception
+        EXPORTING
+          i_message = SWITCH #( sy-subrc WHEN 1 THEN 'invalid_parameter_combination'
+          WHEN 2 THEN 'program_error ' WHEN 3 THEN 'too_many_lines' WHEN 4 THEN 'others'
+          ).
     ENDIF.
-  ENDLOOP.
+    CALL SCREEN 100.
+  ENDMETHOD.
 
-  ch_fcat = lt_fcat.
-ENDMETHOD.
-METHOD change_toolbar.
+  METHOD get_components.
 
-  DATA : gs_exclude LIKE LINE OF me->gr_exclude.
+    DATA : gt_components TYPE cl_abap_structdescr=>component_table.
+    ASSIGN lo_ref->* TO FIELD-SYMBOL(<ft_table>).
+    "To get the name of the fields and other details. gt_components =
+    CAST cl_abap_structdescr( CAST cl_abap_tabledescr(
+    cl_abap_typedescr=>describe_by_data( p_data = <ft_table> )
+    )->get_table_line_type( )
+    )->get_components( ).
 
-  gs_exclude = cl_gui_alv_grid=>mc_fc_loc_insert_row. APPEND gs_exclude TO ch_exclude.
-  gs_exclude = cl_gui_alv_grid=>mc_fc_loc_delete_row. APPEND gs_exclude TO ch_exclude.
+    DELETE gt_components WHERE name = 'MANDT'. ch_components = gt_components.
 
-ENDMETHOD.
-METHOD create_table.
+  ENDMETHOD.
 
-  DATA : lr_table TYPE REF TO cl_abap_tabledescr.
-  DATA : lr_data TYPE REF TO data.
-  me->get_components( CHANGING ch_components = lt_components ).
-
-  IF lines( lt_components ) IS NOT INITIAL.
-    lr_table = cl_abap_tabledescr=>create(
-p_line_type = cl_abap_structdescr=>create( p_components = lt_components ) p_table_kind = cl_abap_tabledescr=>tablekind_std
-). ELSE.
+  METHOD get_data.
+    FIELD-SYMBOLS : <ft_table> TYPE table.
+    ASSIGN ch_ref->* TO <ft_table>.
+    SELECT * FROM (tabname) INTO TABLE <ft_table>. IF <ft_table> IS INITIAL.
     RAISE EXCEPTION TYPE lcl_exception
       EXPORTING
-        i_textid = cx_sy_struct_attributes=>empty_component_table.
+        i_message = |No Data Available in { me->tabname }|.
   ENDIF.
-
-  INSERT VALUE #( name = 'SELECT' type = cl_abap_elemdescr=>get_c( p_length = '1' ) )
-  INTO lt_components INDEX 1.
-  CREATE DATA lr_data TYPE HANDLE lr_table. ASSIGN lr_data->* TO FIELD-SYMBOL(<ft_table2>). ASSIGN lo_ref->* TO FIELD-SYMBOL(<ft_table>).
-  <ft_table2> = CORRESPONDING #( <ft_table> ). ex_ref_tab = lr_data.
-
-ENDMETHOD.
-
-METHOD display_alv.
-
-  ASSIGN lo_ref_sel->* TO FIELD-SYMBOL(<ft_table2>).
-
-  "Design Field Catalogue
-  me->create_fcat( EXPORTING
-  im_ref_tab = lo_ref_sel
-  CHANGING
-  ch_fcat	= fcat
-  ).
-
-  "Exclude DELETE and INSERT icon because we will only "allow to modify the data.
-  me->change_toolbar( CHANGING
-  ch_exclude = gr_exclude
-  ).
-
-  "If you are about to use only one container, you can use
-  "default screen for which you need to use cl_gui_container=>default_screen. "no need of creating and docking a container into the alv.
-  CREATE OBJECT lo_grid EXPORTING i_parent = cl_gui_container=>default_screen.
-
-  lo_grid->set_table_for_first_display( EXPORTING
-  it_toolbar_excluding  = gr_exclude[]
-
-  CHANGING
-  it_outtab	=	<ft_table2>	" Output Table
-  it_fieldcatalog = fcat  " Field Catalog
-  EXCEPTIONS
-  invalid_parameter_combination = 1	" Wrong Parameter
-  program_error	= 2	" Program Errors
-  too_many_lines  = 3 " Too many Rows in Ready for Input Grid OTHERS  = 4
-  ).
-  IF sy-subrc <> 0.
-    RAISE EXCEPTION TYPE lcl_exception
-      EXPORTING
-        i_message = SWITCH #( sy-subrc WHEN 1 THEN 'invalid_parameter_combination'
-        WHEN 2 THEN 'program_error ' WHEN 3 THEN 'too_many_lines' WHEN 4 THEN 'others'
-        ).
-  ENDIF.
-  CALL SCREEN 100.
-ENDMETHOD.
-
-METHOD get_components.
-
-  DATA : gt_components TYPE cl_abap_structdescr=>component_table.
-  ASSIGN lo_ref->* TO FIELD-SYMBOL(<ft_table>).
-  "To get the name of the fields and other details. gt_components =
-  CAST cl_abap_structdescr( CAST cl_abap_tabledescr(
-  cl_abap_typedescr=>describe_by_data( p_data = <ft_table> )
-  )->get_table_line_type( )
-  )->get_components( ).
-
-  DELETE gt_components WHERE name = 'MANDT'. ch_components = gt_components.
-
-ENDMETHOD.
-
-METHOD get_data.
-  FIELD-SYMBOLS : <ft_table> TYPE table.
-  ASSIGN ch_ref->* TO <ft_table>.
-  SELECT * FROM (tabname) INTO TABLE <ft_table>. IF <ft_table> IS INITIAL.
-  RAISE EXCEPTION TYPE lcl_exception
-    EXPORTING
-      i_message = |No Data Available in { me->tabname }|.
-ENDIF.
 ENDMETHOD.
 
 METHOD create_dyn.
-CREATE DATA ch_ref TYPE TABLE OF (tabname).
+  CREATE DATA ch_ref TYPE TABLE OF (tabname).
 ENDMETHOD.
 METHOD run.
-IF tabname IS INITIAL.
-  RETURN.
-ENDIF.
+  IF tabname IS INITIAL.
+    RETURN.
+  ENDIF.
 
-"Create a dynamic table
+  "Create a dynamic table
 
-me->create_dyn( CHANGING
-ch_ref = lo_ref
-).
+  me->create_dyn( CHANGING
+  ch_ref = lo_ref
+  ).
 
-"Get the table data into the report
-me->get_data(
-CHANGING
-ch_ref = lo_ref
-).
+  "Get the table data into the report
+  me->get_data(
+  CHANGING
+  ch_ref = lo_ref
+  ).
 
-"Create a new table with one column named SELECT
-me->create_table(
-EXPORTING
-im_components = lt_components IMPORTING
-ex_ref_tab  = lo_ref_sel
-).
+  "Create a new table with one column named SELECT
+  me->create_table(
+  EXPORTING
+  im_components = lt_components IMPORTING
+  ex_ref_tab  = lo_ref_sel
+  ).
 
-"Display the report. me->display_alv( ).
+  "Display the report. me->display_alv( ).
 ENDMETHOD.
 ENDCLASS.
 
@@ -262,7 +271,8 @@ ENDMODULE.
 *&  *
 FORM save .
   DATA : ir_itab TYPE REF TO data.
-  CREATE DATA ir_itab TYPE TABLE OF (lcl_alv=>tabname). FIELD-SYMBOLS : <fs_table> TYPE table.
+  CREATE DATA ir_itab TYPE TABLE OF (lcl_alv=>tabname).
+  FIELD-SYMBOLS : <fs_table> TYPE table.
   ASSIGN ir_itab->* TO <fs_table>.
 
   "Check if there is any data changed.
